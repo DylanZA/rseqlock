@@ -1,0 +1,4 @@
+benchmarks/*.bench
+**/*.o
+**/*.a
+charts/data.csv
