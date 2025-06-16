@@ -1,4 +1,5 @@
 benchmarks/*.bench
+tests/*.test
 **/*.o
 **/*.a
 charts/data.csv

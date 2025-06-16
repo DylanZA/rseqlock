@@ -28,6 +28,13 @@ If returns < 0, then the lock was unsuccesful.
 `rseq_mutex_release(struct rseq_mutex* mutex, int cpu);`
 Release the lock.
 
+`rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu)`
+Try and lock a given cpu (ie not specifically the current one).
+This will spin until the target cpu is available.
+
+`rseq_mutex_spin_unlock_cpu(struct rseq_mutex* mutex, int cpu)`
+Unlock a cpu after having called `rseq_mutex_spin_lock_cpu`.i
+
 # Benchmark
 
 A simple benchmark is to test the performance of incrementing shared counters. An example use case for this 
