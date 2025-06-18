@@ -1,11 +1,8 @@
 #include <rseqmutex.h>
-#include <sched.h>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <iostream>
 #include <mutex>
-#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -63,15 +60,15 @@ struct Checker {
 
 int main(int argc, char* argv[]) {
   check(rseq_mutex_static_init() == 0, "static init");
-  auto end = std::chrono::steady_clock::now() + std::chrono::seconds(20);
   int const kThreads = std::thread::hardware_concurrency() * 4;
   int const kIter = 500000;
   std::vector<std::thread> threads;
   Checker c;
+  std::atomic<int> done_count{0};
   {
     std::lock_guard<std::mutex> guard(c.start_mutex);
     for (int i = 0; i < kThreads; i++) {
-      threads.emplace_back([&c, kIter, i, end]() mutable {
+      threads.emplace_back([&c, &done_count, kIter, i]() mutable {
         {
           std::lock_guard<std::mutex> guard(c.start_mutex);
         }
@@ -81,13 +78,17 @@ int main(int argc, char* argv[]) {
           }
           break;
         }
+        done_count.fetch_add(1);
       });
     }
   }
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  for (int j = 0; j < kMaxCores; j++) {
-    c.check_invariants(j);
-  }
+
+  // spin checking invariants
+  do {
+    for (int j = 0; j < kMaxCores; j++) {
+      c.check_invariants(j);
+    }
+  } while (done_count != kThreads);
 
   for (auto& t : threads) {
     t.join();

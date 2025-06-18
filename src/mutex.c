@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <linux/membarrier.h> /* Definition of MEMBARRIER_* constants */
 #include <sys/syscall.h> /* Definition of SYS_* constants */
 #include <unistd.h>
@@ -37,7 +38,7 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
   atomic_store(&this_one->disabled, 1);
 
   // make sure that any existing rseq calls are finished after this call
-  int64_t res = syscall(
+  long res = syscall(
       __NR_membarrier,
       MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ,
       MEMBARRIER_CMD_FLAG_CPU,
@@ -45,7 +46,7 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
   if (res) {
     atomic_store(&this_one->disabled, 0);
     pthread_mutex_unlock(&this_one->other_cpu_mutex);
-    return res;
+    return -errno;
   }
 
   // at this point cpu is either locked by another thread or is unlocked and no
@@ -59,6 +60,19 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
       sched_yield();
     }
   }
+
+  // at this point the core is locked, however the processor might have
+  // not actually committed its state before unlocking the core.
+  // Force a fence on that core to get everything synced up
+  //
+  // (todo: Unclear to me if CORE is needed or not)
+  res = syscall(
+      __NR_membarrier, MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
+  if (res) {
+    rseq_mutex_spin_unlock_cpu(mutex, cpu);
+    return -errno;
+  }
+
   return 0;
 }
 

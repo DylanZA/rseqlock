@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <linux/membarrier.h> /* Definition of MEMBARRIER_* constants */
 #include <stdio.h>
 #include <sys/rseq.h>
@@ -13,7 +14,16 @@ int rseq_mutex_static_init() {
   int ret = syscall(
       __NR_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ, 0, 0);
   if (ret) {
-    return -1;
+    return -errno;
+  }
+
+  ret = syscall(
+      __NR_membarrier,
+      MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE,
+      0,
+      0);
+  if (ret) {
+    return -errno;
   }
 
   return 0;
