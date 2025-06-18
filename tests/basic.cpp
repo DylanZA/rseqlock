@@ -61,7 +61,7 @@ struct Checker {
 int main(int argc, char* argv[]) {
   check(rseq_mutex_static_init() == 0, "static init");
   int const kThreads = std::thread::hardware_concurrency() * 4;
-  int const kIter = 500000;
+  int const kIter = 1000000;
   std::vector<std::thread> threads;
   Checker c;
   std::atomic<int> done_count{0};

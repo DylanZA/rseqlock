@@ -17,14 +17,5 @@ int rseq_mutex_static_init() {
     return -errno;
   }
 
-  ret = syscall(
-      __NR_membarrier,
-      MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE,
-      0,
-      0);
-  if (ret) {
-    return -errno;
-  }
-
   return 0;
 }

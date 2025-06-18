@@ -65,9 +65,14 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
   // not actually committed its state before unlocking the core.
   // Force a fence on that core to get everything synced up
   //
-  // (todo: Unclear to me if CORE is needed or not)
+  // Use the RSEQ membarrier call as that is the only one that allows
+  // a cpu argument. It definitely does do a memory barrier (smp_mb) before it
+  // does it's rseq business, so it will work.
   res = syscall(
-      __NR_membarrier, MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE, 0, 0);
+      __NR_membarrier,
+      MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ,
+      MEMBARRIER_CMD_FLAG_CPU,
+      cpu);
   if (res) {
     rseq_mutex_spin_unlock_cpu(mutex, cpu);
     return -errno;
