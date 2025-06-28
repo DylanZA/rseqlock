@@ -16,6 +16,10 @@ static inline struct rseq* rseq_mutex_get_rseq_area() {
   return (struct rseq*)((ptrdiff_t)__builtin_thread_pointer() + __rseq_offset);
 }
 
+static inline void _compiler_barrier() {
+  __asm__ __volatile__("" : : : "memory");
+}
+
 struct rseq_mutex;
 
 int rseq_mutex_static_init();
@@ -120,14 +124,14 @@ static int _rseq_mutex_lock_inner_new(
       : abort, ne
 
   );
-  __asm__ __volatile__("" : : : "memory");
+  _compiler_barrier();
   return 0;
 abort:
-  __asm__ __volatile__("" : : : "memory");
+  _compiler_barrier();
 
   return -1;
 ne:
-  __asm__ __volatile__("" : : : "memory");
+  _compiler_barrier();
   return 1;
 }
 
@@ -181,6 +185,10 @@ static inline void rseq_mutex_release(struct rseq_mutex* mutex, int cpu) {
      */
     _rseq_mutex_set_unlocked_with_fence(mutex, cpu);
   } else {
+    /* Compiler barrier is needed. CPU barrier is enforced if reading from
+     * a diffrent cpu.
+     */
+    _compiler_barrier();
     mutex->cpus[cpu].locked = 0;
   }
 }
