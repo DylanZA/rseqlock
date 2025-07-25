@@ -23,7 +23,7 @@ void rseq_mutex_free(struct rseq_mutex* mutex) {
   free(mutex);
 }
 
-void _rseq_mutex_set_unlocked_with_fence(struct rseq_mutex* mutex, int cpu) {
+void _rseq_mutex_set_unlocked_with_barrier(struct rseq_mutex* mutex, int cpu) {
   atomic_store(&mutex->cpus[cpu].locked, 0);
 }
 
@@ -63,11 +63,16 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
 
   // at this point the core is locked, however the processor might have
   // not actually committed its state before unlocking the core.
-  // Force a fence on that core to get everything synced up
+  // Force a barrier on that core to get everything synced up
+  // (I do not think this is needed on x86 since stores are not
+  // reordered)
   //
   // Use the RSEQ membarrier call as that is the only one that allows
   // a cpu argument. It definitely does do a memory barrier (smp_mb) before it
   // does it's rseq business, so it will work.
+  // One day if something like
+  // https://lore.kernel.org/all/20250626155257.81256-1-dyudaken@gmail.com/
+  // lands then can shift to that.
   res = syscall(
       __NR_membarrier,
       MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ,

@@ -6,6 +6,12 @@
 #include <sys/rseq.h>
 
 #ifdef __cplusplus
+#define _RSEQ_NOEXCEPT noexcept
+#else
+#define _RSEQ_NOEXCEPT
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -22,11 +28,11 @@ static inline void _compiler_barrier() {
 
 struct rseq_mutex;
 
-int rseq_mutex_static_init();
+int rseq_mutex_static_init() _RSEQ_NOEXCEPT;
 
-int rseq_mutex_init(struct rseq_mutex** mutex);
-struct rseq_mutex* rseq_mutex_create();
-void rseq_mutex_free(struct rseq_mutex* mutex);
+int rseq_mutex_init(struct rseq_mutex** mutex) _RSEQ_NOEXCEPT;
+struct rseq_mutex* rseq_mutex_create() _RSEQ_NOEXCEPT;
+void rseq_mutex_free(struct rseq_mutex* mutex) _RSEQ_NOEXCEPT;
 
 struct rseq_mutex_one {
   volatile int64_t locked;
@@ -45,7 +51,8 @@ struct rseq_mutex {
  * (with my addition of  the disabled pointer)
  */
 static int _rseq_mutex_lock_inner_new(
-    intptr_t* disabled, intptr_t* v, intptr_t expect, intptr_t newv, int cpu) {
+    intptr_t* disabled, intptr_t* v, intptr_t expect, intptr_t newv, int cpu)
+    _RSEQ_NOEXCEPT {
   __asm__ __volatile__ goto(
       ".pushsection __rseq_cs, \"aw\"\n\t"
       ".balign 32\n\t"
@@ -135,13 +142,14 @@ ne:
   return 1;
 }
 
-static inline int _read_cpu_id_start() {
+static inline int _read_cpu_id_start() _RSEQ_NOEXCEPT {
   volatile int* cpu_id_start_ptr =
       (volatile int*)&rseq_mutex_get_rseq_area()->cpu_id_start;
   return *cpu_id_start_ptr;
 }
 
-static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu) {
+static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu)
+    _RSEQ_NOEXCEPT {
   int cpu_id = _read_cpu_id_start();
   int64_t* value = (int64_t*)&mutex->cpus[cpu_id].locked;
   int64_t* disabled = (int64_t*)&mutex->cpus[cpu_id].disabled;
@@ -163,19 +171,21 @@ static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu) {
    returns -1 if this cpu was locked by another thread, or else the cpu id
    that it is locked to
 */
-static inline int rseq_mutex_try_lock(struct rseq_mutex* mutex) {
+static inline int rseq_mutex_try_lock(struct rseq_mutex* mutex) _RSEQ_NOEXCEPT {
   int cpu;
   while (_rseq_mutex_lock_inner(mutex, &cpu) != 0)
     ;
   return cpu;
 }
 
-void _rseq_mutex_set_unlocked_with_fence(struct rseq_mutex* mutex, int cpu);
+void _rseq_mutex_set_unlocked_with_barrier(struct rseq_mutex* mutex, int cpu)
+    _RSEQ_NOEXCEPT;
 
 /** Release an rseq mutex
     DO NOT call if the result of rseq_mutex_try_lock was -1
 */
-static inline void rseq_mutex_release(struct rseq_mutex* mutex, int cpu) {
+static inline void rseq_mutex_release(struct rseq_mutex* mutex, int cpu)
+    _RSEQ_NOEXCEPT {
   if (_rseq_unlikely(cpu != _read_cpu_id_start())) {
     /*
      * Have to do an atomic set here, so that previous stores are not reordered
@@ -183,10 +193,10 @@ static inline void rseq_mutex_release(struct rseq_mutex* mutex, int cpu) {
      * another core, as in that case another cpu may grab the lock and not see
      * those writes, which violates the mutex invariants.
      */
-    _rseq_mutex_set_unlocked_with_fence(mutex, cpu);
+    _rseq_mutex_set_unlocked_with_barrier(mutex, cpu);
   } else {
     /* Compiler barrier is needed. CPU barrier is enforced if reading from
-     * a diffrent cpu.
+     * a different cpu.
      */
     _compiler_barrier();
     mutex->cpus[cpu].locked = 0;
@@ -198,16 +208,21 @@ static inline void rseq_mutex_release(struct rseq_mutex* mutex, int cpu) {
    This will spin until it is able to lock
    returns -1 on error, 0 on success
 */
-int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu);
+int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) _RSEQ_NOEXCEPT;
 
 /**
    Unlock an rseq mutex for a given CPU, after having had a successful
    call to rseq_mutex_spin_lock_cpu
 */
-void rseq_mutex_spin_unlock_cpu(struct rseq_mutex* mutex, int cpu);
+void rseq_mutex_spin_unlock_cpu(struct rseq_mutex* mutex, int cpu)
+    _RSEQ_NOEXCEPT;
 
 #undef _rseq_unlikely
 #undef _rseq_likely
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+#undef _RSEQ_NOEXCEPT
+#undef _rseq_unlikely
+#undef _rseq_likely
