@@ -5,7 +5,7 @@
 #include <sys/syscall.h> /* Definition of SYS_* constants */
 #include <unistd.h>
 
-int rseq_mutex_static_init() {
+int rseq_mutex_static_init(void) {
   if (__rseq_size == 0) {
     /* no rseq */
     return -1;

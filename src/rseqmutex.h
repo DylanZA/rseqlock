@@ -1,6 +1,6 @@
 #pragma once
 #include <pthread.h>
-#include <stdatomic.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/rseq.h>
@@ -11,35 +11,51 @@
 #define _RSEQ_NOEXCEPT
 #endif
 
+typedef volatile int64_t rseq_mutex_atomic_i64;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define _rseq_unlikely(x) __builtin_expect(!!(x), 0)
 #define _rseq_likely(x) __builtin_expect(!!(x), 1)
+#define RSEQ_MUTEX_CPU_ALIGN 128
 
-static inline struct rseq* rseq_mutex_get_rseq_area() {
+static inline struct rseq* rseq_mutex_get_rseq_area(void) {
   return (struct rseq*)((ptrdiff_t)__builtin_thread_pointer() + __rseq_offset);
 }
 
-static inline void _compiler_barrier() {
+static inline void _compiler_barrier(void) {
   __asm__ __volatile__("" : : : "memory");
 }
 
 struct rseq_mutex;
 
-int rseq_mutex_static_init() _RSEQ_NOEXCEPT;
+int rseq_mutex_static_init(void) _RSEQ_NOEXCEPT;
 
 int rseq_mutex_init(struct rseq_mutex** mutex) _RSEQ_NOEXCEPT;
-struct rseq_mutex* rseq_mutex_create() _RSEQ_NOEXCEPT;
+struct rseq_mutex* rseq_mutex_create(void) _RSEQ_NOEXCEPT;
 void rseq_mutex_free(struct rseq_mutex* mutex) _RSEQ_NOEXCEPT;
 
 struct rseq_mutex_one {
-  volatile int64_t locked;
-  volatile int64_t disabled;
+  rseq_mutex_atomic_i64 locked;
+  rseq_mutex_atomic_i64 disabled;
   pthread_mutex_t other_cpu_mutex;
-  char buffer[128 - sizeof(int64_t) * 2 - sizeof(pthread_mutex_t)];
-};
+  char buffer[RSEQ_MUTEX_CPU_ALIGN - sizeof(rseq_mutex_atomic_i64) * 2 -
+              sizeof(pthread_mutex_t)];
+} __attribute__((aligned(RSEQ_MUTEX_CPU_ALIGN)));
+
+#ifdef __cplusplus
+static_assert(sizeof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+              "unexpected rseq mutex CPU slot size");
+static_assert(alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+              "unexpected rseq mutex CPU slot alignment");
+#else
+_Static_assert(sizeof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+               "unexpected rseq mutex CPU slot size");
+_Static_assert(_Alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+               "unexpected rseq mutex CPU slot alignment");
+#endif
 
 struct rseq_mutex {
   struct rseq_mutex_one cpus[128]; /* unknown */
@@ -51,7 +67,11 @@ struct rseq_mutex {
  * (with my addition of  the disabled pointer)
  */
 static int _rseq_mutex_lock_inner_new(
-    intptr_t* disabled, intptr_t* v, intptr_t expect, intptr_t newv, int cpu)
+    rseq_mutex_atomic_i64* disabled,
+    rseq_mutex_atomic_i64* v,
+    int64_t expect,
+    int64_t newv,
+    int cpu)
     _RSEQ_NOEXCEPT {
   __asm__ __volatile__ goto(
       ".pushsection __rseq_cs, \"aw\"\n\t"
@@ -142,7 +162,7 @@ ne:
   return 1;
 }
 
-static inline int _read_cpu_id_start() _RSEQ_NOEXCEPT {
+static inline int _read_cpu_id_start(void) _RSEQ_NOEXCEPT {
   volatile int* cpu_id_start_ptr =
       (volatile int*)&rseq_mutex_get_rseq_area()->cpu_id_start;
   return *cpu_id_start_ptr;
@@ -151,9 +171,8 @@ static inline int _read_cpu_id_start() _RSEQ_NOEXCEPT {
 static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu)
     _RSEQ_NOEXCEPT {
   int cpu_id = _read_cpu_id_start();
-  int64_t* value = (int64_t*)&mutex->cpus[cpu_id].locked;
-  int64_t* disabled = (int64_t*)&mutex->cpus[cpu_id].disabled;
-  int64_t expected = 0;
+  rseq_mutex_atomic_i64* value = &mutex->cpus[cpu_id].locked;
+  rseq_mutex_atomic_i64* disabled = &mutex->cpus[cpu_id].disabled;
   int64_t ret = _rseq_mutex_lock_inner_new(disabled, value, 0, 1, cpu_id);
   if (_rseq_likely(ret == 0)) {
     *cpu = cpu_id;

@@ -4,9 +4,6 @@ objs := $(patsubst %.c,%.o,$(srcs))
 all: librseqmutex.a
 .PHONY: all 
 
-override CFLAGS += \
-	-lpthread
-
 %.o: %.c
 	$(CC) $(CFLAGS) $(LXXFLAGS) -c -O2 -g -o $@ $<
 

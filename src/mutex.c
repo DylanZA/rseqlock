@@ -5,12 +5,17 @@
 #include "rseqmutex.h"
 
 int rseq_mutex_init(struct rseq_mutex** mutex) {
-  *mutex = (struct rseq_mutex*)malloc(sizeof(struct rseq_mutex));
+  int ret = posix_memalign(
+      (void**)mutex, RSEQ_MUTEX_CPU_ALIGN, sizeof(struct rseq_mutex));
+  if (ret) {
+    *mutex = NULL;
+    return -ret;
+  }
   memset(*mutex, 0, sizeof(struct rseq_mutex));
-  return *mutex != NULL ? 0 : -1;
+  return 0;
 }
 
-struct rseq_mutex* rseq_mutex_create() {
+struct rseq_mutex* rseq_mutex_create(void) {
   struct rseq_mutex* ret;
   if (rseq_mutex_init(&ret)) {
     return NULL;
@@ -24,7 +29,8 @@ void rseq_mutex_free(struct rseq_mutex* mutex) {
 }
 
 void _rseq_mutex_set_unlocked_with_barrier(struct rseq_mutex* mutex, int cpu) {
-  atomic_store(&mutex->cpus[cpu].locked, 0);
+  // use SEQ_CST as I believe this will force a compiler barrier
+  __atomic_store_n(&mutex->cpus[cpu].locked, 0, __ATOMIC_SEQ_CST);
 }
 
 int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
@@ -34,8 +40,8 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
     return -1;
   }
 
-  // ask future rseqs to fail
-  atomic_store(&this_one->disabled, 1);
+  // ask future locks to fail
+  __atomic_store_n(&this_one->disabled, 1, __ATOMIC_RELEASE);
 
   // make sure that any existing rseq calls are finished after this call
   long res = syscall(
@@ -44,7 +50,7 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
       MEMBARRIER_CMD_FLAG_CPU,
       cpu);
   if (res) {
-    atomic_store(&this_one->disabled, 0);
+    __atomic_store_n(&this_one->disabled, 0, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&this_one->other_cpu_mutex);
     return -errno;
   }
@@ -54,9 +60,9 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
   // midst of an rseq attempt to lock this cpu.
   //
   // So now, try get the lock in a spin loop
-  while (atomic_exchange_explicit(&this_one->locked, 1, memory_order_acq_rel) ==
+  while (__atomic_exchange_n(&this_one->locked, 1, __ATOMIC_ACQ_REL) ==
          1) {
-    if (atomic_load_explicit(&this_one->locked, memory_order_relaxed) == 1) {
+    if (__atomic_load_n(&this_one->locked, __ATOMIC_RELAXED) == 1) {
       sched_yield();
     }
   }
@@ -88,7 +94,7 @@ int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
 
 void rseq_mutex_spin_unlock_cpu(struct rseq_mutex* mutex, int cpu) {
   struct rseq_mutex_one* this_one = &mutex->cpus[cpu];
-  atomic_store(&this_one->disabled, 0);
-  atomic_store(&this_one->locked, 0);
+  __atomic_store_n(&this_one->disabled, 0, __ATOMIC_RELEASE);
+  __atomic_store_n(&this_one->locked, 0, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&this_one->other_cpu_mutex);
 }
