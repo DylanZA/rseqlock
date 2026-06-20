@@ -2,7 +2,7 @@ CFLAGS ?=
 srcs := rseq.c mutex.c
 objs := $(patsubst %.c,%.o,$(srcs))
 all: librseqmutex.a
-.PHONY: all 
+.PHONY: all clean
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(LXXFLAGS) -c -O2 -g -o $@ $<
@@ -12,4 +12,4 @@ librseqmutex.a: $(objs)
 	$(AR) rcs librseqmutex.a $^
 
 clean:
-	rm -f *.so *.a
+	rm -f *.o *.so *.a

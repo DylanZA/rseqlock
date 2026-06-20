@@ -4,8 +4,12 @@ all:
 	@$(MAKE) -C src
 	@$(MAKE) -C benchmarks
 
-.PHONY: all default test
+test:
+	@$(MAKE) -C tests
+
+.PHONY: all clean default test
 
 clean:
 	@$(MAKE) -C src clean
+	@$(MAKE) -C tests clean
 	@$(MAKE) -C benchmarks clean

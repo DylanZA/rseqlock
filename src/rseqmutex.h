@@ -20,6 +20,7 @@ extern "C" {
 #define _rseq_unlikely(x) __builtin_expect(!!(x), 0)
 #define _rseq_likely(x) __builtin_expect(!!(x), 1)
 #define RSEQ_MUTEX_CPU_ALIGN 128
+#define RSEQ_MUTEX_MAX_CPUS 128
 
 static inline struct rseq* rseq_mutex_get_rseq_area(void) {
   return (struct rseq*)((ptrdiff_t)__builtin_thread_pointer() + __rseq_offset);
@@ -58,7 +59,7 @@ _Static_assert(_Alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
 #endif
 
 struct rseq_mutex {
-  struct rseq_mutex_one cpus[128]; /* unknown */
+  struct rseq_mutex_one cpus[RSEQ_MUTEX_MAX_CPUS]; /* unknown */
 };
 
 /* copied from librseq rseq_load_cbne_store__ptr after running through a
@@ -168,9 +169,20 @@ static inline int _read_cpu_id_start(void) _RSEQ_NOEXCEPT {
   return *cpu_id_start_ptr;
 }
 
+static inline int _rseq_mutex_cpu_in_range(int cpu) _RSEQ_NOEXCEPT {
+  return cpu >= 0 && cpu < RSEQ_MUTEX_MAX_CPUS;
+}
+
 static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu)
     _RSEQ_NOEXCEPT {
   int cpu_id = _read_cpu_id_start();
+#ifndef NDEBUG
+  // in release you better be sure
+  if (_rseq_unlikely(!_rseq_mutex_cpu_in_range(cpu_id))) {
+    *cpu = -1;
+    return 0;
+  }
+#endif
   rseq_mutex_atomic_i64* value = &mutex->cpus[cpu_id].locked;
   rseq_mutex_atomic_i64* disabled = &mutex->cpus[cpu_id].disabled;
   int64_t ret = _rseq_mutex_lock_inner_new(disabled, value, 0, 1, cpu_id);

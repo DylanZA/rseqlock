@@ -1,7 +1,7 @@
 srcs := basic.cpp
 objs := $(patsubst %.cpp,%.test,$(srcs))
 all: $(objs)
-.PHONY: all
+.PHONY: all clean
 
 CPPFLAGS ?=
 override CPPFLAGS += \
@@ -13,6 +13,9 @@ override LDFLAGS += -L../src/ -lrseqmutex -lpthread
 
 %.test: %.cpp ../src/librseqmutex.a ../src/rseqmutex.h
 	$(CXX) $(CPPFLAGS) $< $(LDFLAGS) -I ../src/ -O2  -o $@ 
+
+../src/librseqmutex.a:
+	$(MAKE) -C ../src
+
 clean:
 	rm -f *.test
-

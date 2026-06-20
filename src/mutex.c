@@ -34,6 +34,9 @@ void _rseq_mutex_set_unlocked_with_barrier(struct rseq_mutex* mutex, int cpu) {
 }
 
 int rseq_mutex_spin_lock_cpu(struct rseq_mutex* mutex, int cpu) {
+  if (!_rseq_mutex_cpu_in_range(cpu)) {
+    return -EINVAL;
+  }
   struct rseq_mutex_one* this_one = &mutex->cpus[cpu];
   int ret = pthread_mutex_lock(&this_one->other_cpu_mutex);
   if (ret) {
