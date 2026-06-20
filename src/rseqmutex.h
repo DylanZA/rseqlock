@@ -105,7 +105,7 @@ static int _rseq_mutex_lock_inner_new(
       "jnz 4f\n\t"
 
       // if disabled is set then dont do anything
-      "test %[disabled], %[disabled] \n\t"
+      "cmpq $0, %[disabled]\n\t"
       "jnz %l[ne]\n\t"
       "cmpq %[v], %[expect]\n\t"
       "jne %l[ne]\n\t"
@@ -122,7 +122,7 @@ static int _rseq_mutex_lock_inner_new(
       :
       : [cpu_id] "r"(cpu),
         [rseq_offset] "r"(__rseq_offset),
-        [disabled] "r"(*disabled),
+        [disabled] "m"(*disabled),
         [v] "m"(*v),
         [expect] "r"(expect),
         [newv] "r"(newv)
