@@ -13,6 +13,8 @@ void check(bool x, std::string place = {}) {
   if (!x) {
     if (!place.empty()) {
       std::cerr << "die: " << place << " \n";
+    } else {
+      std::cerr << "die for some reason\n";
     }
     std::exit(-1);
   }

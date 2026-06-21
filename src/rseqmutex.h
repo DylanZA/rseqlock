@@ -11,7 +11,7 @@
 #define _RSEQ_NOEXCEPT
 #endif
 
-typedef volatile int64_t rseq_mutex_atomic_i64;
+typedef volatile uint64_t rseq_mutex_atomic_u64;
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,11 +38,23 @@ int rseq_mutex_init(struct rseq_mutex** mutex) _RSEQ_NOEXCEPT;
 struct rseq_mutex* rseq_mutex_create(void) _RSEQ_NOEXCEPT;
 void rseq_mutex_free(struct rseq_mutex* mutex) _RSEQ_NOEXCEPT;
 
+enum {
+  _rseq_mutex_storage_lock_byte = 0,
+  _rseq_mutex_storage_disabled_byte = 1,
+  _rseq_mutex_storage_lock_value = 1,
+  _rseq_mutex_storage_disabled_value = 0x100,
+
+  _rseq_mutex_storage_locked_and_disabled = _rseq_mutex_storage_lock_value | _rseq_mutex_storage_disabled_value,
+};
+
 struct rseq_mutex_one {
-  rseq_mutex_atomic_i64 locked;
-  rseq_mutex_atomic_i64 disabled;
+  union {
+    rseq_mutex_atomic_u64 lock_storage;
+    unsigned char lock_storage_bytes[8];
+  };
+
   pthread_mutex_t other_cpu_mutex;
-  char buffer[RSEQ_MUTEX_CPU_ALIGN - sizeof(rseq_mutex_atomic_i64) * 2 -
+  char buffer[RSEQ_MUTEX_CPU_ALIGN - sizeof(rseq_mutex_atomic_u64) -
               sizeof(pthread_mutex_t)];
 } __attribute__((aligned(RSEQ_MUTEX_CPU_ALIGN)));
 
@@ -68,10 +80,8 @@ struct rseq_mutex {
  * (with my addition of  the disabled pointer)
  */
 static int _rseq_mutex_lock_inner_new(
-    rseq_mutex_atomic_i64* disabled,
-    rseq_mutex_atomic_i64* v,
-    int64_t expect,
-    int64_t newv,
+    struct rseq* rseq_area,
+    rseq_mutex_atomic_u64* v,
     int cpu)
     _RSEQ_NOEXCEPT {
   __asm__ __volatile__ goto(
@@ -119,19 +129,25 @@ static int _rseq_mutex_lock_inner_new(
       ".quad %l[ne]\n\t"
       ".popsection\n\t"
 
-      "leaq 3b(%%rip), %%rax\n\t"
-      "movq %%rax, %%fs:8(%[rseq_offset])\n\t"
+      // store instruction address of label 3b in rseq
+      "leaq 3b(%%rip), %%r11\n\t"
+      "movq %%r11, 8(%[rseq_area])\n\t"
+
+      // begin critical section
       "1:\n\t"
-      "cmpl %[cpu_id], %%fs:4(%[rseq_offset])\n\t"
+
+      // is the expected cpu id what we want, if not exit to abort
+      // as we have been rescheduled
+      "cmpl %[cpu_id], 4(%[rseq_area])\n\t"
       "jnz 4f\n\t"
 
-      // if disabled is set then dont do anything
-      "cmpq $0, %[disabled]\n\t"
+      // if disabled or locked is set then dont do anything
+      "movq %[v], %%r11\n\t"
+      "testq %%r11, %%r11\n\t"
       "jnz %l[ne]\n\t"
-      "cmpq %[v], %[expect]\n\t"
-      "jne %l[ne]\n\t"
 
-      "movq %[newv], %[v]\n\t"
+      // commit the lock
+      "movb $1, %[v]\n\t"
       "2:\n\t"
 
       ".pushsection __rseq_failure, \"ax\"\n\t"
@@ -142,12 +158,9 @@ static int _rseq_mutex_lock_inner_new(
       ".popsection\n\t"
       :
       : [cpu_id] "r"(cpu),
-        [rseq_offset] "r"(__rseq_offset),
-        [disabled] "m"(*disabled),
-        [v] "m"(*v),
-        [expect] "r"(expect),
-        [newv] "r"(newv)
-      : "memory", "cc", "rax"
+        [rseq_area] "r"(rseq_area),
+        [v] "m"(*v)
+      : "memory", "cc", "r11"
 
       : abort, ne
 
@@ -175,17 +188,17 @@ static inline int _rseq_mutex_cpu_in_range(int cpu) _RSEQ_NOEXCEPT {
 
 static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu)
     _RSEQ_NOEXCEPT {
-  int cpu_id = _read_cpu_id_start();
-#ifndef NDEBUG
+  struct rseq* rseq_area = rseq_mutex_get_rseq_area();
+  int cpu_id = *(volatile int*)&rseq_area->cpu_id_start;
+#ifdef RSEQ_MUTEX_DEBUG
   // in release you better be sure
   if (_rseq_unlikely(!_rseq_mutex_cpu_in_range(cpu_id))) {
     *cpu = -1;
     return 0;
   }
 #endif
-  rseq_mutex_atomic_i64* value = &mutex->cpus[cpu_id].locked;
-  rseq_mutex_atomic_i64* disabled = &mutex->cpus[cpu_id].disabled;
-  int64_t ret = _rseq_mutex_lock_inner_new(disabled, value, 0, 1, cpu_id);
+  rseq_mutex_atomic_u64* value = &mutex->cpus[cpu_id].lock_storage;
+  int64_t ret = _rseq_mutex_lock_inner_new(rseq_area, value, cpu_id);
   if (_rseq_likely(ret == 0)) {
     *cpu = cpu_id;
     return 0; /* ok */
@@ -230,7 +243,7 @@ static inline void rseq_mutex_release(struct rseq_mutex* mutex, int cpu)
      * a different cpu.
      */
     _compiler_barrier();
-    mutex->cpus[cpu].locked = 0;
+    mutex->cpus[cpu].lock_storage_bytes[_rseq_mutex_storage_lock_byte] = 0;
   }
 }
 

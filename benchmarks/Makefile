@@ -11,7 +11,7 @@ LDFLAGS ?=
 override LDFLAGS += -L../src/ -lrseqmutex -lpthread
 
 %.bench: %.cpp ../src/librseqmutex.a ../src/rseqmutex.h
-	$(CXX) $(CPPFLAGS) $< $(LDFLAGS) -I ../src/ -O2  -o $@ 
+	$(CXX) $(CPPFLAGS) $< $(LDFLAGS) -DNDEBUG -I ../src/ -O2  -o $@
 clean:
 	rm -f *.bench
 
