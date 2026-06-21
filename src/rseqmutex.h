@@ -44,7 +44,8 @@ enum {
   _rseq_mutex_storage_lock_value = 1,
   _rseq_mutex_storage_disabled_value = 0x100,
 
-  _rseq_mutex_storage_locked_and_disabled = _rseq_mutex_storage_lock_value | _rseq_mutex_storage_disabled_value,
+  _rseq_mutex_storage_locked_and_disabled =
+      _rseq_mutex_storage_lock_value | _rseq_mutex_storage_disabled_value,
 };
 
 struct rseq_mutex_one {
@@ -54,20 +55,25 @@ struct rseq_mutex_one {
   };
 
   pthread_mutex_t other_cpu_mutex;
-  char buffer[RSEQ_MUTEX_CPU_ALIGN - sizeof(rseq_mutex_atomic_u64) -
-              sizeof(pthread_mutex_t)];
+  char buffer
+      [RSEQ_MUTEX_CPU_ALIGN - sizeof(rseq_mutex_atomic_u64) -
+       sizeof(pthread_mutex_t)];
 } __attribute__((aligned(RSEQ_MUTEX_CPU_ALIGN)));
 
 #ifdef __cplusplus
-static_assert(sizeof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
-              "unexpected rseq mutex CPU slot size");
-static_assert(alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
-              "unexpected rseq mutex CPU slot alignment");
+static_assert(
+    sizeof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+    "unexpected rseq mutex CPU slot size");
+static_assert(
+    alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+    "unexpected rseq mutex CPU slot alignment");
 #else
-_Static_assert(sizeof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
-               "unexpected rseq mutex CPU slot size");
-_Static_assert(_Alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
-               "unexpected rseq mutex CPU slot alignment");
+_Static_assert(
+    sizeof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+    "unexpected rseq mutex CPU slot size");
+_Static_assert(
+    _Alignof(struct rseq_mutex_one) == RSEQ_MUTEX_CPU_ALIGN,
+    "unexpected rseq mutex CPU slot alignment");
 #endif
 
 struct rseq_mutex {
@@ -80,10 +86,7 @@ struct rseq_mutex {
  * (with my addition of  the disabled pointer)
  */
 static int _rseq_mutex_lock_inner_new(
-    struct rseq* rseq_area,
-    rseq_mutex_atomic_u64* v,
-    int cpu)
-    _RSEQ_NOEXCEPT {
+    struct rseq* rseq_area, rseq_mutex_atomic_u64* v, int cpu) _RSEQ_NOEXCEPT {
   __asm__ __volatile__ goto(
       ".pushsection __rseq_cs, \"aw\"\n\t"
       ".balign 32\n\t"
@@ -157,9 +160,7 @@ static int _rseq_mutex_lock_inner_new(
       "jmp %l[abort]\n\t"
       ".popsection\n\t"
       :
-      : [cpu_id] "r"(cpu),
-        [rseq_area] "r"(rseq_area),
-        [v] "m"(*v)
+      : [cpu_id] "r"(cpu), [rseq_area] "r"(rseq_area), [v] "m"(*v)
       : "memory", "cc", "r11"
 
       : abort, ne
