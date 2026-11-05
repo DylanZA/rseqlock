@@ -3,3 +3,4 @@ tests/*.test
 **/*.o
 **/*.a
 charts/*.csv
+examples/*.example

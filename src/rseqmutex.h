@@ -191,13 +191,12 @@ static inline int _rseq_mutex_lock_inner(struct rseq_mutex* mutex, int* cpu)
     _RSEQ_NOEXCEPT {
   struct rseq* rseq_area = rseq_mutex_get_rseq_area();
   int cpu_id = *(volatile int*)&rseq_area->cpu_id_start;
-#ifdef RSEQ_MUTEX_DEBUG
-  // in release you better be sure
+  // Unsupported CPU IDs must fail even in release builds, so callers can
+  // safely choose a fallback if a thread migrates beyond this fixed array.
   if (_rseq_unlikely(!_rseq_mutex_cpu_in_range(cpu_id))) {
     *cpu = -1;
     return 0;
   }
-#endif
   rseq_mutex_atomic_u64* value = &mutex->cpus[cpu_id].lock_storage;
   int64_t ret = _rseq_mutex_lock_inner_new(rseq_area, value, cpu_id);
   if (_rseq_likely(ret == 0)) {

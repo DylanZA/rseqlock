@@ -4,7 +4,7 @@ objs := $(patsubst %.c,%.o,$(srcs))
 all: librseqmutex.a
 .PHONY: all clean
 
-%.o: %.c
+%.o: %.c rseqmutex.h
 	$(CC) $(CFLAGS) $(LXXFLAGS) -c -O2 -g -o $@ $<
 
 librseqmutex.a: $(objs)
